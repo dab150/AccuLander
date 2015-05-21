@@ -63,28 +63,9 @@ int main(void)
 
     while(1)
     {
-        GPS_ON_SetLow(); //turn on gps
-        
         gps_Routine();            //update GPS
         RelayLoop();              //primary relay function
-        InjectTryInject('p');     //injects pressure packet every 10 seconds
-
-        //Test stuff
-        
-//
-//
-//        if(gps.locState == GPS_LOC_VALID) //if valid GPS reading
-//        {
-//            InjectTryInject('p'); //WP_Count
-//           // InjectTryInject('w'); //WP_Item
-//            Nop();
-//
-//            //Delays 3 sec
-//            int i = 0;
-//            for(i=0; i<(10 * 3); i++)
-//                delay_ms(100);
-//        }
-       
+        InjectPressure();         //injects pressure packet every 10 seconds
     }
 }
 

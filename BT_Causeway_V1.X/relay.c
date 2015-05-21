@@ -143,15 +143,15 @@ void relayFromRadio()
 
         if(LandChannel != 0 && LandChannel < 1500 && LandInjected == 0)    //Valid reading and the mode we want for landing
         {
-            InjectTryInject('c'); //WP_Count
+            InjectCount(); //WP_Count
 
-            InjectTryInject('1'); //Landing WP
+            InjectWaypoint('1'); //First Approach WP
 
-            InjectTryInject('2'); //Final Approach WP
+            InjectWaypoint('2'); //Final Approach WP
 
-            InjectTryInject('3'); //First Approach WP
-            //delay_ms(300);
-            InjectTryInject('a'); //WP_Ack
+            InjectWaypoint('3'); //Landing WP
+
+            InjectAcknowledge(); //WP_Ack
 
             LandInjected = 1; //true
         }

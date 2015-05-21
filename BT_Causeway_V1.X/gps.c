@@ -33,6 +33,7 @@ char LonDegree[5] , LonMin[3], LonSec[8];    //the white space separates the val
 
 Latitude LatAsDecimal;
 Longitude LonAsDecimal;
+Altitude AltAsDecimal;
 
 
 /******************************************************************************/
