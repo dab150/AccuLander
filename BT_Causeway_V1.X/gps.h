@@ -102,6 +102,12 @@ typedef union
 
 } Longitude;
 
+typedef union
+{
+    double doublewise;
+    unsigned char bytewise[4];
+} Altitude;
+
 /******************************************************************************/
 /* Variable                                                                   */
 /******************************************************************************/
@@ -111,6 +117,7 @@ extern char LatDegree[4], LatMin[3], LatSec[8];
 extern char LonDegree[5], LonMin[3], LonSec[8];
 extern Latitude LatAsDecimal;
 extern Longitude LonAsDecimal;
+extern Altitude AltAsDecimal;
 
 /******************************************************************************/
 /* Functions                                                                  */
