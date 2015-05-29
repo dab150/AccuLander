@@ -42,6 +42,7 @@ extern compass_data_t CompassData;
  ******************************************************************************/
 void Compass_Init(void);
 void Compass_Read(void);
+double Get_Compass_Heading(void);
 void __Compass_Test(void);
 
 

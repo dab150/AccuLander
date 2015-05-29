@@ -16,6 +16,7 @@
 #include "mcc_generated_files/uart1.h"
 #include "barometer.h"
 #include "parsing.h"
+#include "relay.h"
 
 
 #define X25_INIT_CRC        0xffff
@@ -29,8 +30,10 @@
  */
 
 static inject_private_t CheckRC;
+static inject_private_t CheckLandDir;
 
 bool RC_PACKET_DETECTED = false;
+bool LAND_DIR_PACKET_DETECTED = false;
 
 
 /******************************************************************************/
@@ -38,6 +41,7 @@ bool RC_PACKET_DETECTED = false;
 /******************************************************************************/
 
 RC_Channel_PWM RC_Channel_6;
+Landing_Direction LandDir;
 
 /******************************************************************************/
 /* Local Functions                                                            */
@@ -49,6 +53,11 @@ void CheckRCLoopInit()
     CheckRC.state = 0;
 }
 
+void CheckLandDirInit()
+{
+    //Init state
+    CheckLandDir.state = 0;
+}
 
 /******************************************************************************/
 /* Public Functions                                                           */
@@ -119,8 +128,77 @@ int CheckRCLoop(unsigned char rx)
         case MACHINE_NAME_STATE_MAX:
         default:
             //Error, unknown state
-            InjectInit();
+            CheckRCLoopInit();
             break;
     }
     return 0; //default
+}
+
+void CheckLandingDirection(unsigned char rx)
+{
+    if(CheckLandDir.state > MACHINE_NAME_STATE_MAX)
+    {
+        CheckLandDirInit();
+        return;
+    }
+
+    //Analyze recieved byte
+    int ret;
+    switch (CheckLandDir.state)
+    {
+        case INJECT_STATE_MSG_END:
+            if(rx == 0xFE)
+            {
+                //First byte of the packet detected
+                CheckLandDir.state = INJECT_STATE_WAIT_LEN;
+            }
+            break;
+
+        case INJECT_STATE_WAIT_LEN:
+            //Len byte recieved
+            CheckLandDir.cont = 2;                    //Already has 2 bytes
+            CheckLandDir.fullLen = rx + 6 + 2;        //Calc the packet len
+            CheckLandDir.state = INJECT_STATE_WAIT_END;
+            break;
+
+        case INJECT_STATE_WAIT_END:
+
+            if(++CheckLandDir.cont >= CheckLandDir.fullLen)
+            {
+                //Full packet recieved
+                CheckLandDir.state = INJECT_STATE_MSG_END;
+            }
+
+            if(CheckLandDir.cont == 6 && rx == 183) //if the MessageID (count 6) is 0xB7 (183) then it is a raw_channel_message
+            {
+                LAND_DIR_PACKET_DETECTED = true;
+            }
+            else if(CheckLandDir.fullLen != 10)
+            {
+                LAND_DIR_PACKET_DETECTED = false;
+            }
+
+            if(LAND_DIR_PACKET_DETECTED)
+            {
+                if(CheckLandDir.cont == 7) //count 7-8 = Landing Direction
+                {
+                    LandDir.bytewise[0] = rx;
+                }
+                if(CheckLandDir.cont == 8)
+                {
+                    LandDir.bytewise[1] = rx;
+                }
+                if(CheckLandDir.cont == 8)
+                {
+                    LandDirFromUser = LandDir.intwise; //Landing Direction as double
+                }
+            }
+            break;
+
+        case MACHINE_NAME_STATE_MAX:
+        default:
+            //Error, unknown state
+            CheckLandDirInit();
+            break;
+    }
 }

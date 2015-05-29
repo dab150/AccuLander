@@ -15,6 +15,7 @@
 #include "compass.h"
 #include "mcc_generated_files/i2c2.h"
 #include "debug.h"
+#include <math.h>
 
 compass_data_t CompassData;
 
@@ -63,6 +64,15 @@ void Compass_Read(void)
     CompassData.z|= read[3];
 }
 
+double Get_Compass_Heading(void)
+{
+    double heading = -1;
+    Compass_Read();
+    
+    heading = atan(CompassData.y / CompassData.x);
+
+    return heading;
+}
 /**
  * Performs a compas reading and print results over debug console. 
  */

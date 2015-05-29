@@ -52,11 +52,8 @@ int main(void)
     gps_Init();
     Bar_Init();
     
-    
     //gps_PowerOn(2500);
     GPS_ON_SetLow(); //turn on gps
-
-
 
     //Init timer
     AppTimer = 0;
@@ -68,31 +65,3 @@ int main(void)
         InjectPressure();         //injects pressure packet every 10 seconds
     }
 }
-
-
-
-/**
-
- SYSTEM_Initialize();
-    RelayInit();
-    InjectInit();
-
-    //Bar_Init();
-
-    //POWER_GPS_COMPASS_TURN_ON();
-    //Compass_Init();
-    //gps_Init();
-
-
-    while(1)
-    {
-        //relayUARTs();
-        
-        __Bar_Test();
-        __Compass_Test();
-
-        //Delays 3 sec
-        for(i=0; i<(10 * 3); i++)
-            delay_ms(100);
-         * */
-

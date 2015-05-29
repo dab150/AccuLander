@@ -19,7 +19,7 @@
 
 #include "CircularBuffer.h"
 
-#define INJECT_PERIOD                   10 //(60 * 2) //seconds
+#define INJECT_PERIOD                   (60 * 2) //seconds
 
 #define RADIO_OUTPUT_BUFFER             256
 
@@ -33,15 +33,13 @@
 #define WP_FULL_LEN                     (WP_MSG_LEN + 6 + 2)
 
 #define WP_ACK_MSG_LEN                  3
-#define WP_ACK_FULL_LEN                  (WP_ACK_MSG_LEN + 6 + 2)
+#define WP_ACK_FULL_LEN                 (WP_ACK_MSG_LEN + 6 + 2)
 
+#define WP_CLEAR_MSG_LEN                2
+#define WP_CLEAR_FULL_LEN               (WP_CLEAR_MSG_LEN + 6 + 2)
 #define PRESS_SYSTEM_ID                 0xE3
-#define WP_COUNT_SYSTEM_ID              0xE3
-#define WP_SYSTEM_ID                    0xE3
 
 #define PRESS_COMP_ID                   191
-#define WP_COUNT_COMP_ID                191
-#define WP_COMP_ID                      191
 
 /******************************************************************************/
 /* TypeDefs                                                                   */
@@ -136,6 +134,23 @@ typedef union
     };
 }WP_Ack_t;
 
+typedef union
+{
+    uint8_t buf[WP_ACK_FULL_LEN];
+    struct
+    {
+        uint8_t     start;              //0
+        uint8_t     len;                //1
+        uint8_t     count;              //2
+        uint8_t     sys_id;             //3
+        uint8_t     comp_id;            //4
+        uint8_t     msgType;            //5
+        uint8_t     target_sys;         //6
+        uint8_t     target_comp;        //7
+        uint8_t     checksum[2];        //8-9
+    };
+}WP_Clear_t;
+
 typedef struct
 {    
     uint8_t timer;   
@@ -148,12 +163,13 @@ typedef struct
 {
     inject_states_t state;
     uint8_t bufArray[RADIO_OUTPUT_BUFFER];  //Array for a circular buffer
-    uint16_t fullLen;       //How long is the actual packet
-    uint16_t cont;          //How many bytes of the actual buffer I already recieved
-    pressure_packet_t press;//packet for pressure value
-    WP_Count_packet_t WPCount; //packet for WP_Count
-    WP_packet_t WPitem; //packet for a WP
-    WP_Ack_t WPAck; //Mission acknowledgement packet
+    uint16_t fullLen;             //How long is the actual packet
+    uint16_t cont;                //How many bytes of the actual buffer I already recieved
+    pressure_packet_t press;      //packet for pressure value
+    WP_Count_packet_t WPCount;    //packet for WP_Count
+    WP_packet_t WPitem;           //packet for a WP
+    WP_Ack_t WPAck;               //Mission acknowledgement packet
+    WP_Clear_t WPClear;           //clear entire mission
     
 }inject_private_t;
 

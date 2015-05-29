@@ -21,7 +21,7 @@ typedef struct
 {
    uint16_t writePointer;
    uint16_t readPointer;
-   uint16_t size;               //Size fo the buffer
+   uint32_t size;               //Size fo the buffer
    CircularBufferArray_t *arr;  //Array where data are stored
 } CircularBuffer_t;
 

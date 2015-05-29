@@ -40,6 +40,10 @@ typedef struct
 /******************************************************************************/
 
 extern relay_data_t relayData;
+extern int LandInjected; //false
+extern int MissionInjectStage; //0 - not started, 1 - count, 2 - home WP, 3 - first approach WP, 4 - second approach WP, 5 - final landing point, 6 - acknowledge
+extern int LandChannel;
+extern int LandDirFromUser;
 
 
 /******************************************************************************/

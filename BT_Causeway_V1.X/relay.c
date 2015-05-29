@@ -25,8 +25,10 @@
 /******************************************************************************/
 
 relay_data_t relayData;
-int y = 0;
 int LandInjected = 0; //false
+int MissionInjectStage = 0; //0 - not started, 1 - count, 2 - home WP, 3 - first approach WP, 4 - second approach WP, 5 - final landing point, 6 - acknowledge
+int LandChannel = 0;
+int LandDirFromUser;
 
 /******************************************************************************/
 /* Functions                                                                  */
@@ -133,32 +135,47 @@ void relayFromRadio()
         {
             if(!UART2_TransmitBufferIsFull())   //There is free space in U2 tx buffer
             {
-                UART2_Write(rxByte);      //Read byte from U3 and send to U2
+                UART2_Write(rxByte);     //Read byte from U3 and send to U2
             }
         }
 
         
-        //check for land command from RC
-        int LandChannel = CheckRCLoop(rxByte); //check to see if data from radio is RC_Channel info
+        LandChannel = CheckRCLoop(rxByte); //check to see if data from radio is RC_Channel info
 
-        if(LandChannel != 0 && LandChannel < 1500 && LandInjected == 0)    //Valid reading and the mode we want for landing
+        if(LandChannel != 0 && LandChannel < 1500 && MissionInjectStage == 0 && LandInjected == 0)    //Valid reading and the mode we want for landing
         {
-            InjectCount(); //WP_Count
-
-            InjectWaypoint('1'); //First Approach WP
-
-            InjectWaypoint('2'); //Final Approach WP
-
-            InjectWaypoint('3'); //Landing WP
-
-            InjectAcknowledge(); //WP_Ack
-
-            LandInjected = 1; //true
+            MissionInjectStage = 1;
         }
         else if (LandChannel != 0 && LandChannel > 1500) //valid reading but not the mode we want
         {
-            LandInjected = 0; //set false
+            MissionInjectStage = 0;
+            LandInjected = 0;
             Nop();
+        }
+
+        switch(MissionInjectStage) //inject a packet on each cycle
+        {
+            case 0:
+                //do nothing
+                break;
+            case 1:
+                InjectCount(4);
+                break;
+            case 2:
+                InjectWaypoint('h');
+                break;
+            case 3:
+                InjectWaypoint('1');
+                break;
+            case 4:
+                InjectWaypoint('2');
+                break;
+            case 5:
+                InjectWaypoint('3');
+                break;
+            case 6:
+                InjectAcknowledge();
+                break;
         }
     }
 }
@@ -175,7 +192,11 @@ void relayFromUSB()
 
     if(!UART1_ReceiveBufferIsEmpty())
     {
-            InjectLoop(UART1_Read()); //Reads data from UART1 and sends to injector
+        unsigned char rx = UART1_Read(); //Reads data from UART1 and
+        InjectLoop(rx); //sends to injector
+
+        //check for BTB_LAND packet from Mission Planner
+        CheckLandingDirection(rx);
     }
 
     //Lets see if there is some data available to send to radio

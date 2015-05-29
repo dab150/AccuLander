@@ -16,6 +16,8 @@
 #include "mcc_generated_files/uart1.h"
 #include "barometer.h"
 #include "gps.h"
+#include <math.h>
+#include "relay.h"
 
 
 #define X25_INIT_CRC        0xffff
@@ -42,7 +44,10 @@ static const uint8_t __WP_ITEM_SAMPLE [WP_FULL_LEN] =
     0xc2, 0x8f, 0x62, 0xcd, 0x43, 0x00, 0x00, 0x10, 0x00, 0x1, 0x1, 0x0, 0x00, 0x1, 0x14, 0x65};
 
 static const uint8_t __WP_ACK_SAMPLE [WP_ACK_FULL_LEN] =
-{0xfe, 0x3, 0xe1, 0xff, 0xbe, 0x2f, 0x01, 0x01, 0x0, 0x74, 0x31};
+    {0xfe, 0x3, 0xe1, 0xff, 0xbe, 0x2f, 0x01, 0x01, 0x0, 0x74, 0x31};
+
+static const uint8_t __WP_CLEAR_SAMPLE [WP_CLEAR_FULL_LEN] =
+    {0xfe, 0x2, 0xe1, 0xff, 0xbe, 0x2d, 0x01, 0x01, 0x74, 0x31};
 
 static const uint8_t __PRESSURE_SAMPLE[PARAM_UPDATE_FULL_LEN] =
     {0xfe, 0x17, 0xfd, 0xff, 0xbe, 0x17, 0x00, 0x50, 0xc3, 0x47, 0x01, 0x01,
@@ -109,6 +114,15 @@ static uint16_t crc_calculate(uint8_t pBuffer[], uint8_t length)
     return (crcTmp);
 }
 
+void IncrementPacketCount()
+{
+    this.press.count++;
+    this.WPCount.count++;
+    this.WPitem.count++;
+    this.WPAck.count++;
+    this.WPClear.count++;
+}
+
 /******************************************************************************/
 /* Public Functions                                                           */
 /******************************************************************************/
@@ -136,7 +150,7 @@ void InjectInit()
     this.WPCount.comp_id = PRESS_COMP_ID;
 
     //Init WP injection buffer
-    memcpy(this.WPitem.buf, __WP_ITEM_SAMPLE, WP_COUNT_FULL_LEN);
+    memcpy(this.WPitem.buf, __WP_ITEM_SAMPLE, WP_FULL_LEN);
     this.WPitem.count = 0;
     this.WPitem.sys_id  = PRESS_SYSTEM_ID;
     this.WPitem.comp_id = PRESS_COMP_ID;
@@ -146,6 +160,13 @@ void InjectInit()
     this.WPAck.count = 0;
     this.WPAck.sys_id = PRESS_SYSTEM_ID;
     this.WPAck.comp_id = PRESS_COMP_ID;
+
+    //Init WP_Clear injection buffer
+    memcpy(this.WPClear.buf, __WP_CLEAR_SAMPLE, WP_CLEAR_FULL_LEN);
+    this.WPClear.count = 0;
+    this.WPClear.sys_id = PRESS_SYSTEM_ID;
+    this.WPClear.comp_id = PRESS_COMP_ID;
+
 }
 
 /**
@@ -234,10 +255,7 @@ void InjectPressure()
         memcpy(this.press.data, &pres, sizeof(float));
 
         //update count of all injected packets
-        this.press.count++;
-        this.WPCount.count++;
-        this.WPitem.count++;
-        this.WPAck.count++;
+        IncrementPacketCount();
 
         //checksum
         cheksum = crc_calculate(this.press.buf, PARAM_UPDATE_MSG_LEN+6);
@@ -253,7 +271,45 @@ void InjectPressure()
     }
 }
 
-void InjectCount()
+void InjectClearMission()
+{
+    //I can't inject here?
+    if(this.state != INJECT_STATE_MSG_END)
+        return;
+
+    //Is there enough space to inject?
+    if(CircularBufferFreeSpace(&(inject.outBuff)) > (2 * WP_CLEAR_FULL_LEN))
+    {
+        uint8_t i;
+        uint16_t cheksum;
+
+        //Restart timer
+        //inject.timer = INJECT_PERIOD; //this timer is only for pressure
+
+        //update count of all injected packets
+        IncrementPacketCount();
+
+        //update relevant values
+        this.WPClear.target_sys = 1;
+        this.WPClear.target_comp = 1;
+
+        //checksum
+        cheksum = crc_calculate(this.WPClear.buf, WP_CLEAR_MSG_LEN+6);
+        cheksum = crc_accumulate(
+                MAVLINK_MESSAGE_CRCS[this.WPClear.msgType],
+                cheksum);
+
+        memcpy(this.WPClear.checksum, &cheksum, sizeof(cheksum));
+
+
+        //Inject WP_Count
+        for(i=0; i<WP_COUNT_FULL_LEN; i++)
+            CircularBufferEnque(&(inject.outBuff), this.WPClear.buf[i]);
+
+    }
+}
+
+void InjectCount(uint8_t x)
 {
     //I can't inject here?
     if(this.state != INJECT_STATE_MSG_END)
@@ -265,20 +321,13 @@ void InjectCount()
         uint8_t i;
         uint16_t cheksum;
 
-        //Restart timer
-        //inject.timer = INJECT_PERIOD; //this timer is only for pressure
-
         //update count of all injected packets
-        this.press.count++;
-        this.WPCount.count++;
-        this.WPitem.count++;
-        this.WPAck.count++;
+        IncrementPacketCount();
 
         //update relevant values
         this.WPCount.target_sys = 1;
         this.WPCount.target_comp = 1;
-        this.WPCount.numOfPoints = 2; //home waypoint and landing waypoint
-
+        this.WPCount.numOfPoints = x;
 
         //checksum
         cheksum = crc_calculate(this.WPCount.buf, WP_COUNT_MSG_LEN+6);
@@ -289,9 +338,14 @@ void InjectCount()
         memcpy(this.WPCount.checksum, &cheksum, sizeof(cheksum));
 
 
-        //Inject WP_Count
+        //Inject WP_Count to buffer
         for(i=0; i<WP_COUNT_FULL_LEN; i++)
+        {
             CircularBufferEnque(&(inject.outBuff), this.WPCount.buf[i]);
+        }
+
+        MissionInjectStage = 2; //move to next stage
+
     }
 }
 
@@ -301,9 +355,17 @@ void InjectWaypoint(char x)
     if(this.state != INJECT_STATE_MSG_END)
         return;
 
+    //determine direction of waypoints
+    int direction = LandDirFromUser; //Direction input from User from Mission Planner
+    double directionInRads = 3.14159 * direction / 180;
+
+    //calculate direction
+    double OneMeterLat = .000008998 * sin(3.14159 - directionInRads - 3.14159 / 2) / sin(3.14159 / 2);     //.000008998 degrees LAT = 1m east and west
+    double OneMeterLon = .000011950 * sin(directionInRads) / sin(3.14159 / 2);                             //.000011950 degrees LNG = 1m north and south
+
     switch(x)
     {
-        case '1': //inject First Approach Point
+        case 'h': //inject Home Waypoint
 
             //Is there enough space to inject?
             if(CircularBufferFreeSpace(&(inject.outBuff)) > (2 * WP_FULL_LEN))
@@ -311,17 +373,11 @@ void InjectWaypoint(char x)
                 uint8_t i;
                 uint16_t cheksum;
 
-                //Get GPS coordinates
+                //update GPS coordinates
                 gps_UpdateLatLon();
 
                 //update count of all injected packets
-                this.press.count++;
-                this.WPCount.count++;
-                this.WPitem.count++;
-                this.WPAck.count++;
-
-                //offset GPS coordinates for landing
-                LatAsDecimal.doublewise = LatAsDecimal.doublewise - .002; //completely random for now
+                IncrementPacketCount();
 
                 //Set Altitude
                 AltAsDecimal.doublewise = 100; //100 meters
@@ -346,9 +402,65 @@ void InjectWaypoint(char x)
 
                 memcpy(this.WPitem.checksum, &cheksum, sizeof(cheksum));
 
-                //Inject WP
+                //Inject WP to buffer
                 for(i=0; i<WP_FULL_LEN; i++)
+                {
                     CircularBufferEnque(&(inject.outBuff), this.WPitem.buf[i]);
+                }
+
+                MissionInjectStage = 3;
+            }
+            break;
+
+
+        case '1': //inject First Approach Point
+
+            //Is there enough space to inject?
+            if(CircularBufferFreeSpace(&(inject.outBuff)) > (2 * WP_FULL_LEN))
+            {
+                uint8_t i;
+                uint16_t cheksum;
+
+                //update GPS coordinates
+                gps_UpdateLatLon();
+
+                //update count of all injected packets
+                IncrementPacketCount();
+
+                //offset GPS coordinates for landing
+                LonAsDecimal.doublewise = LonAsDecimal.doublewise - (500 * OneMeterLon); //300 meters away in the direction we want
+                LatAsDecimal.doublewise = LatAsDecimal.doublewise - (500 * OneMeterLat);
+
+                //Set Altitude
+                AltAsDecimal.doublewise = 120; // meters
+
+                //Update relevant values of GPS packet.
+                memcpy(this.WPitem.Latitude, LatAsDecimal.bytewise, 4);
+                memcpy(this.WPitem.Longitude, LonAsDecimal.bytewise, 4);
+                memcpy(this.WPitem.Altitude, AltAsDecimal.bytewise, 4);
+
+                this.WPitem.command[0] = 16; //standard mission item
+                this.WPitem.autocontinue = 1;
+                this.WPitem.target_comp = 1;
+                this.WPitem.target_sys = 1;
+                this.WPitem.sequence[0] = 1;
+                this.WPitem.frame = 3;
+
+                //checksum
+                cheksum = crc_calculate(this.WPitem.buf, WP_MSG_LEN+6);
+                cheksum = crc_accumulate(
+                        MAVLINK_MESSAGE_CRCS[this.WPitem.msgType],
+                        cheksum);
+
+                memcpy(this.WPitem.checksum, &cheksum, sizeof(cheksum));
+
+                //Inject WP_Count to buffer
+                for(i=0; i<WP_FULL_LEN; i++)
+                {
+                    CircularBufferEnque(&(inject.outBuff), this.WPitem.buf[i]);
+                }
+
+                MissionInjectStage = 4;
             }
             break;
 
@@ -360,75 +472,18 @@ void InjectWaypoint(char x)
                 uint8_t i;
                 uint16_t cheksum;
 
-                //Restart timer
-                //inject.timer = INJECT_PERIOD; //this timer is only for pressure
-
-                //Get GPS coordinates
-                gps_UpdateLatLon();
-
-                //offset GPS cooridnates for landing
-                LatAsDecimal.doublewise = LatAsDecimal.doublewise - .0005; //completely random for now
-
-                //update count of all injected packets
-                this.press.count++;
-                this.WPCount.count++;
-                this.WPitem.count++;
-                this.WPAck.count++;
-
-                //Set Altitude
-                AltAsDecimal.doublewise = 10; //10 meters
-
-                //Update relevant values of GPS packet.
-                memcpy(this.WPitem.Latitude, LatAsDecimal.bytewise, 4);
-                memcpy(this.WPitem.Longitude, LonAsDecimal.bytewise, 4);
-                memcpy(this.WPitem.Altitude, AltAsDecimal.bytewise, 4);
-
-                this.WPitem.command[0] = 16;
-                this.WPitem.autocontinue = 1;
-                this.WPitem.target_comp = 1;
-                this.WPitem.target_sys = 1;
-                this.WPitem.sequence[0] = 1;
-                this.WPitem.frame = 3;
-
-
-                //checksum
-                cheksum = crc_calculate(this.WPitem.buf, WP_MSG_LEN+6);
-                cheksum = crc_accumulate(
-                        MAVLINK_MESSAGE_CRCS[this.WPitem.msgType],
-                        cheksum);
-
-                memcpy(this.WPitem.checksum, &cheksum, sizeof(cheksum));
-
-                //Inject WP
-                for(i=0; i<WP_FULL_LEN; i++)
-                    CircularBufferEnque(&(inject.outBuff), this.WPitem.buf[i]);
-            }
-            break;
-
-
-      case '3': //inject Final Waypoint
-
-            //Is there enough space to inject?
-            if(CircularBufferFreeSpace(&(inject.outBuff)) > (2 * WP_FULL_LEN))
-            {
-                uint8_t i;
-                uint16_t cheksum;
-
-                //Restart timer
-                //inject.timer = INJECT_PERIOD; //this timer is only for pressure
-
-                //Get GPS coordinates
+                //update GPS coordinates
                 gps_UpdateLatLon();
 
                 //update count of all injected packets
-                this.press.count++;
-                this.WPCount.count++;
-                this.WPitem.count++;
-                this.WPAck.count++;
+                IncrementPacketCount();
 
+                //offset GPS coordinates for landing
+                LonAsDecimal.doublewise = LonAsDecimal.doublewise - (100 * OneMeterLon); //50 meters away in the direction we want
+                LatAsDecimal.doublewise = LatAsDecimal.doublewise - (100 * OneMeterLat);
 
                 //Set Altitude
-                AltAsDecimal.doublewise = 0; //0 meters - Land
+                AltAsDecimal.doublewise = 30; // meters
 
                 //Update relevant values of GPS packet.
                 memcpy(this.WPitem.Latitude, LatAsDecimal.bytewise, 4);
@@ -451,9 +506,71 @@ void InjectWaypoint(char x)
 
                 memcpy(this.WPitem.checksum, &cheksum, sizeof(cheksum));
 
-                //Inject WP
+                //Inject WP_Count to buffer
                 for(i=0; i<WP_FULL_LEN; i++)
+                {
                     CircularBufferEnque(&(inject.outBuff), this.WPitem.buf[i]);
+                }
+
+                MissionInjectStage = 5;
+            }
+            break;
+
+
+      case '3': //inject Final Waypoint
+
+            //Is there enough space to inject?
+            if(CircularBufferFreeSpace(&(inject.outBuff)) > (2 * WP_FULL_LEN))
+            {
+                uint8_t i;
+                uint16_t cheksum;
+
+                //Restart timer
+                //inject.timer = INJECT_PERIOD; //this timer is only for pressure
+
+                //update GPS coordinates
+                gps_UpdateLatLon();
+
+                //update count of all injected packets
+                IncrementPacketCount();
+
+                //offset GPS coordinates for landing
+                //offset GPS coordinates for landing
+                LonAsDecimal.doublewise = LonAsDecimal.doublewise - (1 * OneMeterLon); //1 meter away in the direction we want
+                LatAsDecimal.doublewise = LatAsDecimal.doublewise - (1 * OneMeterLat);
+
+                //Set Altitude
+                AltAsDecimal.doublewise = 1; //1 meter - Land
+
+                //Update relevant values of GPS packet.
+                memcpy(this.WPitem.Latitude, LatAsDecimal.bytewise, 4);
+                memcpy(this.WPitem.Longitude, LonAsDecimal.bytewise, 4);
+                memcpy(this.WPitem.Altitude, AltAsDecimal.bytewise, 4);
+
+                this.WPitem.command[0] = 16;
+                this.WPitem.autocontinue = 1;
+                this.WPitem.target_comp = 1;
+                this.WPitem.target_sys = 1;
+                this.WPitem.sequence[0] = 3;
+                this.WPitem.frame = 3;
+
+
+                //checksum
+                cheksum = crc_calculate(this.WPitem.buf, WP_MSG_LEN+6);
+                cheksum = crc_accumulate(
+                        MAVLINK_MESSAGE_CRCS[this.WPitem.msgType],
+                        cheksum);
+
+                memcpy(this.WPitem.checksum, &cheksum, sizeof(cheksum));
+
+                //Inject WP_Count to buffer
+                for(i=0; i<WP_FULL_LEN; i++)
+                {
+                    CircularBufferEnque(&(inject.outBuff), this.WPitem.buf[i]);
+                }
+
+                MissionInjectStage = 6;
+
             }
             break;
     }
@@ -475,10 +592,7 @@ void InjectAcknowledge()
         //inject.timer = INJECT_PERIOD; //this timer is only for pressure
 
         //update count of all injected packets
-        this.press.count++;
-        this.WPCount.count++;
-        this.WPitem.count++;
-        this.WPAck.count++;
+        IncrementPacketCount();
 
         //Update relevant values of acknowledgement packet.
         this.WPAck.target_comp = 1;
@@ -492,9 +606,14 @@ void InjectAcknowledge()
 
         memcpy(this.WPAck.checksum, &cheksum, sizeof(cheksum));
 
-        //Inject packet
+        //Inject WP_Count to buffer
         for(i=0; i<WP_ACK_FULL_LEN; i++)
+        {
             CircularBufferEnque(&(inject.outBuff), this.WPAck.buf[i]);
+        }
+
+        MissionInjectStage = 0;
+        LandInjected = 1;
     }
 }
 
